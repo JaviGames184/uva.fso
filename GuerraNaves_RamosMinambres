@@ -1,0 +1,15 @@
+//@author Javier Ramos
+//@author Alejandro Minambres
+
+//Control ShiftB y Despues ejecutar en el terminal
+#include <iostream>
+#include <vector>
+#include <string>
+
+using namespace std;
+
+
+int main()
+{
+    printf("Hola");
+}
