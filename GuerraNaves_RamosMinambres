@@ -1,15 +1,98 @@
-//@author Javier Ramos
-//@author Alejandro Minambres
+//Javier Ramos - Alejandro Minambres
+//Los * es que se dispara y se acierta
+//Los espacios es que se dispara y falla
+//Las b siempre están seguidas de un número --> Botiquin se toma una vida y deja una menos de las que tiene
+//Cualquier otro caracter es invalido
 
-//Control ShiftB y Despues ejecutar en el terminal
-#include <iostream>
-#include <vector>
-#include <string>
+//Recibe por parámetros fichero de entrada, fichero de salida, tamaño del buffer, número de naves que compiten
+//Tienes que comprobar que los parámetros son correctos y que son 4 (5 cosas)
+//Mirar si el fichero existe...
+//Tenemos que validar completamente la entrada
 
-using namespace std;
+//El primer hilo es disparador que solo es 1 hilo
+//Este hilo lee los caracteres del fichero
+//Cuenta los invalidos
+//Los válidos los mete en un buffer circular del tamaño que se indica
+
+//Cada hilo es una nave y lo que lee es lo que recibe
+//En los botiquines también se modifica el buffer --> El botiquin solo se borra cuando tiene 0 vidas
+
+//Después escriben los resultados en la lista enlazada por turnos
+
+//El hilo juez comprueba escribe los resultados que dicen las naves y decide que hilo gana
+
+//Como el disparador imprime en el fichero los resultados de la lectura y el juez también --> Lo usas para comporbar
+
+//Entrega 0 es el 2 diciembre --> Disparador y una única nave
+//Con dos semáforos se puede
+//Podemos hacer una versión con botiquines
+//Que por ahora lo esciba en un vector
+
+//Fase 2 el juez y varias naves con el vector
+
+//Fase 3 convertir el vector en la lista enlazada
 
 
-int main()
+//El main espera a que se termine destruye todos los semáforos y todos los free y termina
+
+
+#include <stdio.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+sem_t s1;
+
+void *disparador(void *arg)
 {
-    printf("Hola");
+    return 0;
+}
+
+
+int main(int argc, char* argv[])
+{
+    // Variables
+    char* fichero_entrada;
+    char* fichero_salida;
+    int buffersize;
+    int numnaves;
+
+    if(argc != 5)
+    {
+        //Se comprueba que el numero de parametros sea correcto
+        printf("El numero de parametros no es correcto");
+        exit(0);
+    }
+    else
+    {
+        //Se guardan los parámetros
+        fichero_entrada = argv[1];
+        fichero_salida = argv[2];
+
+        //TODO comprobar que los ficheros existen
+
+        //TODO solo se utiliza el primer digito
+
+        buffersize = (int) *argv[3];
+        buffersize -= 48;
+
+        if ( (buffersize < 0) || (buffersize > 9) )
+        {
+            printf("El tamaño del buffer no es un número");
+        }
+
+        numnaves = (int) *argv[4];
+        numnaves -= 48;
+
+        if ( (numnaves < 0) || (numnaves > 9) )
+        {
+            printf("La cantidad de naves no es un número");
+        }
+    }
+
+    printf("%s", fichero_entrada);
+    printf("%s", fichero_salida);
+    printf("%d", buffersize);
+    printf("%d", numnaves);
+
+    return 0;
 }
