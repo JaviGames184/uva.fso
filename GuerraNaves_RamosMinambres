@@ -49,11 +49,11 @@ int posicion_lectura;
 
 // Semaforos
 sem_t espacio_buffer;
-sem_t mutex_disparador_posicion;
 sem_t haydatos;
+sem_t lectura_buffer;
 
-
-struct Datos
+// Structs
+struct General_Data
 {
     char* fichero_entrada;
     char* fichero_salida;    
@@ -61,20 +61,30 @@ struct Datos
     int numnaves; 
 };
 
+struct Naves_Data
+{
+    int buffersize;
+    int* hit;
+    int* miss;
+    int* health; 
+} datos_naves;
+
 
 
 // Hilo Disparador 
 void* disparador(void* arg)
 {
-    struct Datos * datos_disparador;
-    datos_disparador = (struct Datos*)arg;
-    FILE *fichero_entrada = fopen(datos_disparador->fichero_entrada, "r");
+    struct General_Data * datos_disparador;
+    datos_disparador = (struct General_Data*)arg;
 
+    //Variables locales    
+    FILE *fichero_entrada = fopen(datos_disparador -> fichero_entrada, "r");
     char caracter;
     bool caracter_correcto;
     int correctos = 0;
     int incorrectos = 0;
     int leidos = 0;
+
     while ((caracter = fgetc(fichero_entrada)) != EOF) 
     {
         caracter_correcto = false;
@@ -101,24 +111,22 @@ void* disparador(void* arg)
         {
             correctos ++;
 
-            sem_wait(&mutex_disparador_posicion);
             int pos = posicion_escritura;
-            posicion_escritura = (posicion_escritura + 1) % datos_disparador->buffersize;
-            sem_post(&mutex_disparador_posicion);
+            posicion_escritura = (posicion_escritura + 1) % datos_disparador -> buffersize;
 
             sem_wait(&espacio_buffer);
             Buffer[pos] = caracter;
-            sem_post(&espacio_buffer);
-            
-
-            sem_post(&haydatos);
+            sem_post(&haydatos);            
         } 
         else
         {
             incorrectos ++;
-        }             
+        }  
     }
+    Buffer[posicion_escritura] = '\0'; 
+    sem_post(&haydatos);
     fclose(fichero_entrada);
+
 
     // Se escriben los resultados
     FILE *fichero_salida = fopen(datos_disparador->fichero_salida, "w");
@@ -130,8 +138,64 @@ void* disparador(void* arg)
 
 
 // Hilo Nave
-void* Naves(void* arg)
+void* naves(void* arg)
 {
+    int id_nave = *((int *) arg);
+
+    //Variables
+    datos_naves.hit[id_nave] = 0;
+    datos_naves.miss[id_nave] = 0; 
+    datos_naves.health[id_nave] = 0;
+    char caracter = ' ';
+
+    while(caracter != '\0')
+    {     
+        sem_wait(&haydatos);   
+        sem_wait(&lectura_buffer);
+        int pos = posicion_lectura;
+        caracter = Buffer[pos];  
+
+        if ((caracter == '1') || (caracter == '2') || (caracter == '3'))
+        {
+            datos_naves.health[id_nave]++;
+            caracter --;
+            if(caracter == '0')
+            {
+                posicion_lectura = (posicion_lectura + 1) % datos_naves.buffersize;               
+                // Ya se puede saltar ese caracter
+                sem_post(&espacio_buffer);
+            }
+            else
+            {
+                Buffer[pos] = caracter; 
+                sem_post(&haydatos);       
+            }
+            sem_post(&lectura_buffer); 
+                       
+        }
+        else if (caracter != '\0')
+        {
+            posicion_lectura = (posicion_lectura + 1) % datos_naves.buffersize;
+            sem_post(&lectura_buffer);
+            // Ya se puede saltar ese caracter
+            sem_post(&espacio_buffer);
+            if(caracter == '*')
+            {
+                datos_naves.hit[id_nave] ++;
+            }
+            else if (caracter == ' ')
+            {            
+                datos_naves.miss[id_nave] ++;
+            }
+        }        
+    }  
+    return 0;
+}
+
+// Hilo Juez
+void* juez(void* arg)
+{
+    
     return 0;
 }
 
@@ -199,12 +263,19 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Se crea un tipo de datos con toda la informacion necesaria
-    struct Datos datos;
+    // Se inicializan los tipso de datos con toda la informacion necesaria
+    // Datos recibidos
+    struct General_Data datos;
     datos.fichero_entrada = fichero_entrada;
     datos.fichero_salida = fichero_salida;
     datos.buffersize = buffersize;
     datos.numnaves = numnaves;
+
+    // Datos utilizados por las naves
+    datos_naves.buffersize = buffersize;
+    datos_naves.hit = (int*)malloc(numnaves*sizeof(int));
+    datos_naves.miss = (int*)malloc(numnaves*sizeof(int));
+    datos_naves.health = (int*)malloc(numnaves*sizeof(int));
 
     // Se inicializan las variables
     posicion_escritura = 0;
@@ -213,23 +284,50 @@ int main(int argc, char* argv[])
 
     // Se inicializan los semaforos
     sem_init(&espacio_buffer, 0, buffersize);
-    sem_init(&mutex_disparador_posicion, 0, 1);
     sem_init(&haydatos, 0, 0);
+    sem_init(&lectura_buffer, 0, 1);
     
     // Se crea el hilo disparador
-    pthread_t Disparador;
-    pthread_create(&Disparador, NULL, disparador, (void*)&datos);    
+    pthread_t Disparador;    
+    pthread_t Naves[numnaves];   
+
+    // Se crea una lista de identificadores
+    int id_naves[numnaves];
+    for(int i = 0; i < numnaves; i++)
+    {
+        id_naves[i] = i;
+    }
+
+    pthread_create(&Disparador, NULL, disparador, (void*)&datos); 
+    for(int i = 0; i < numnaves; i++)
+    {
+        pthread_create(&Naves[i], NULL, naves, (void*)&id_naves[i]); 
+    }
+       
+
+    // Se espera a que los hilos terminen    
     pthread_join(Disparador, NULL);
+    for(int i = 0; i < numnaves; i++)
+    {
+        pthread_join(Naves[i], NULL);
+    }
+
+    // Se llama al juez    
+    printf("%d\n", datos_naves.hit[0]);
+    printf("%d\n", datos_naves.miss[0]);
+    printf("%d\n", datos_naves.health[0]);
 
 
-    //TODO resto del programa
-
-
-    printf("%s", Buffer);
+    // Se eliminan las variables que se han utilizado
     sem_destroy(&espacio_buffer);
-    sem_destroy(&mutex_disparador_posicion);
-    sem_destroy(&haydatos);
+    sem_destroy(&haydatos);    
+    sem_destroy(&lectura_buffer);
+
     free(Buffer);
-    
+    free(datos_naves.hit);
+    free(datos_naves.miss);
+    free(datos_naves.health);
+
+
     return 0;
 }
