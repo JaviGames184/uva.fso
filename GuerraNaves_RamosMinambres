@@ -1,44 +1,11 @@
 //Javier Ramos - Alejandro Minambres
-//Los * es que se dispara y se acierta
-//Los espacios es que se dispara y falla
-//Las b siempre están seguidas de un número --> Botiquin se toma una vida y deja una menos de las que tiene
-//Cualquier otro caracter es invalido
 
-//Recibe por parámetros fichero de entrada, fichero de salida, tamaño del buffer, número de naves que compiten
-//Tienes que comprobar que los parámetros son correctos y que son 4 (5 cosas)
-//Mirar si el fichero existe...
-//Tenemos que validar completamente la entrada
-
-//El primer hilo es disparador que solo es 1 hilo
-//Este hilo lee los caracteres del fichero
-//Cuenta los invalidos
-//Los válidos los mete en un buffer circular del tamaño que se indica
-
-//Cada hilo es una nave y lo que lee es lo que recibe
-//En los botiquines también se modifica el buffer --> El botiquin solo se borra cuando tiene 0 vidas
-
-//Después escriben los resultados en la lista enlazada por turnos
-
-//El hilo juez comprueba escribe los resultados que dicen las naves y decide que hilo gana
-
-//Como el disparador imprime en el fichero los resultados de la lectura y el juez también --> Lo usas para comporbar
-
-//Entrega 0 es el 2 diciembre --> Disparador y una única nave
-//Con dos semáforos se puede
-//Podemos hacer una versión con botiquines
-//Que por ahora lo esciba en un vector
-
-//Fase 2 el juez y varias naves con el vector
-
-//Fase 3 convertir el vector en la lista enlazada
-
-
-//El main espera a que se termine destruye todos los semáforos y todos los free y termina
-
+//TODO antes de atoi comprobar que todo son numeros
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <pthread.h>
 #include <semaphore.h>
 
@@ -51,6 +18,7 @@ int posicion_lectura;
 sem_t espacio_buffer;
 sem_t haydatos;
 sem_t lectura_buffer;
+sem_t nave_fin;
 
 // Structs
 struct General_Data
@@ -59,14 +27,21 @@ struct General_Data
     char* fichero_salida;    
     int buffersize;
     int numnaves; 
+    int caracteres_correctos;
+    int caracteres_incorrectos;
+    int caracteres_leidos;
 };
 
 struct Naves_Data
 {
+    int* identificadores;
+    int numnaves;
     int buffersize;
     int* hit;
     int* miss;
     int* health; 
+    int* puntuacion;
+    bool* end;
 } datos_naves;
 
 
@@ -105,8 +80,11 @@ void* disparador(void* arg)
             {
                 caracter_correcto = true;
             }
+            else
+            {
+                incorrectos ++;
+            }
         }
-
         if (caracter_correcto)
         {
             correctos ++;
@@ -116,22 +94,28 @@ void* disparador(void* arg)
 
             sem_wait(&espacio_buffer);
             Buffer[pos] = caracter;
-            sem_post(&haydatos);            
+            sem_post(&haydatos);          
         } 
         else
         {
             incorrectos ++;
         }  
+
     }
-    Buffer[posicion_escritura] = '\0'; 
-    sem_post(&haydatos);
+    for(int i=0; i < datos_disparador->numnaves; i++)
+    {
+        sem_wait(&espacio_buffer);
+        int pos = posicion_escritura;
+        Buffer[pos] = '\0'; 
+        posicion_escritura = (posicion_escritura + 1) % datos_disparador -> buffersize;
+        sem_post(&haydatos);
+    }
     fclose(fichero_entrada);
 
 
-    // Se escriben los resultados
-    FILE *fichero_salida = fopen(datos_disparador->fichero_salida, "w");
-    fprintf(fichero_salida, "El disparador ha procesado: %d tokens válidos y %d tokens inválidos, total: %d", correctos, incorrectos, leidos);
-    fclose(fichero_salida);
+    datos_disparador->caracteres_correctos = correctos;    
+    datos_disparador->caracteres_incorrectos = incorrectos;
+    datos_disparador->caracteres_leidos = leidos;
 
     return 0;
 }
@@ -173,7 +157,7 @@ void* naves(void* arg)
             sem_post(&lectura_buffer); 
                        
         }
-        else if (caracter != '\0')
+        else
         {
             posicion_lectura = (posicion_lectura + 1) % datos_naves.buffersize;
             sem_post(&lectura_buffer);
@@ -189,13 +173,74 @@ void* naves(void* arg)
             }
         }        
     }  
+    datos_naves.end[id_nave] = true;
+    sem_post(&nave_fin);
     return 0;
 }
+
 
 // Hilo Juez
 void* juez(void* arg)
 {
+    struct General_Data * datos_juez;
+    datos_juez = (struct General_Data*)arg;
+
+    FILE *fichero_salida = fopen(datos_juez->fichero_salida, "w");
     
+    fprintf(fichero_salida, "El disparador ha procesado: %d tokens válidos y %d tokens inválidos, total: %d", datos_juez->caracteres_correctos, datos_juez->caracteres_incorrectos, datos_juez->caracteres_leidos);
+
+    for(int k=0; k < datos_naves.numnaves; k++)
+    {
+        // Se guarda la puntucion
+        datos_naves.puntuacion[k] = datos_naves.hit[k] - datos_naves.health[k];
+        // Se escribe en el fichero        
+        fprintf(fichero_salida, "\nNave: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
+        k, datos_naves.hit[k], datos_naves.miss[k], datos_naves.health[k],  datos_naves.puntuacion[k]);
+    }
+
+    int mayor_puntuacion;
+    for(int posicion = 1; posicion <= 2; posicion++)
+    {
+        // Se busca la puntuacion mas alta
+        mayor_puntuacion = 0;
+        for(int j=0; j < datos_naves.numnaves; j++)
+        {
+            if(datos_naves.puntuacion[mayor_puntuacion] < datos_naves.puntuacion[j])
+            {
+                mayor_puntuacion = j;
+            }
+        }
+        if (posicion == 1)
+        {
+            fprintf(fichero_salida, "\nNave Ganadora: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
+            mayor_puntuacion, datos_naves.hit[mayor_puntuacion], datos_naves.miss[mayor_puntuacion], datos_naves.health[mayor_puntuacion],  datos_naves.puntuacion[mayor_puntuacion] );
+        }
+        else if (datos_juez->numnaves != 1)
+        {
+            fprintf(fichero_salida, "\nNave Subcampeona: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
+            mayor_puntuacion, datos_naves.hit[mayor_puntuacion], datos_naves.miss[mayor_puntuacion], datos_naves.health[mayor_puntuacion],  datos_naves.puntuacion[mayor_puntuacion] );
+        }
+        // Se quita esa puntuacion para buscar la segunda mejor
+        datos_naves.puntuacion[mayor_puntuacion] = 0;
+    }
+
+    int totalhits = 0;
+    int totalmisses = 0;
+    int totalhp = 0;
+    int totaltoken = 0;
+
+    for(int i=0; i < datos_naves.numnaves; i++)
+    {
+        totalhits += datos_naves.hit[i];
+        totalmisses += datos_naves.miss[i];
+        totalhp += datos_naves.health[i];
+        totaltoken = totaltoken + datos_naves.hit[i] + datos_naves.miss[i] + datos_naves.health[i];
+    }
+
+    fprintf(fichero_salida, "\n================== RESUMEN ==============\n\tDisparos recibidos Totales: %d\n\tDisparos fallados Totales: %d\n\tBotiquines obtenidos Totales: %d\n\tTotal de tokens emitidos: %d\n",
+    totalhits, totalmisses, totalhp, totaltoken);
+    
+    fclose(fichero_salida);
     return 0;
 }
 
@@ -213,7 +258,7 @@ int main(int argc, char* argv[])
 
     if(argc != 5)
     {
-        //Se comprueba que el numero de parametros sea correcto
+        // Se comprueba que el numero de parametros sea correcto
         printf("El numero de parametros no es correcto\n");
         exit(0);
     }
@@ -273,9 +318,16 @@ int main(int argc, char* argv[])
 
     // Datos utilizados por las naves
     datos_naves.buffersize = buffersize;
+    datos_naves.numnaves = numnaves;
     datos_naves.hit = (int*)malloc(numnaves*sizeof(int));
     datos_naves.miss = (int*)malloc(numnaves*sizeof(int));
-    datos_naves.health = (int*)malloc(numnaves*sizeof(int));
+    datos_naves.health = (int*)malloc(numnaves*sizeof(int));    
+    datos_naves.puntuacion = (int*)malloc(numnaves*sizeof(int));
+    datos_naves.end = (bool*)malloc(numnaves*sizeof(bool));
+    for(int i=0; i < numnaves*sizeof(bool); i++)
+    {
+        datos_naves.end[i] = false;
+    }
 
     // Se inicializan las variables
     posicion_escritura = 0;
@@ -286,10 +338,12 @@ int main(int argc, char* argv[])
     sem_init(&espacio_buffer, 0, buffersize);
     sem_init(&haydatos, 0, 0);
     sem_init(&lectura_buffer, 0, 1);
+    sem_init(&nave_fin, 0, 0);
     
     // Se crea el hilo disparador
     pthread_t Disparador;    
-    pthread_t Naves[numnaves];   
+    pthread_t Naves[numnaves];  
+    pthread_t Juez;    
 
     // Se crea una lista de identificadores
     int id_naves[numnaves];
@@ -302,7 +356,8 @@ int main(int argc, char* argv[])
     for(int i = 0; i < numnaves; i++)
     {
         pthread_create(&Naves[i], NULL, naves, (void*)&id_naves[i]); 
-    }
+    }    
+    pthread_create(&Juez, NULL, juez, (void*)&datos);  
        
 
     // Se espera a que los hilos terminen    
@@ -310,23 +365,22 @@ int main(int argc, char* argv[])
     for(int i = 0; i < numnaves; i++)
     {
         pthread_join(Naves[i], NULL);
-    }
-
-    // Se llama al juez    
-    printf("%d\n", datos_naves.hit[0]);
-    printf("%d\n", datos_naves.miss[0]);
-    printf("%d\n", datos_naves.health[0]);
+    }    
+    pthread_join(Juez, NULL);
 
 
     // Se eliminan las variables que se han utilizado
     sem_destroy(&espacio_buffer);
     sem_destroy(&haydatos);    
     sem_destroy(&lectura_buffer);
+    sem_destroy(&nave_fin);
 
     free(Buffer);
     free(datos_naves.hit);
     free(datos_naves.miss);
     free(datos_naves.health);
+    free(datos_naves.puntuacion);
+    free(datos_naves.end);
 
 
     return 0;
