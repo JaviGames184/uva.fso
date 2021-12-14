@@ -43,8 +43,7 @@ struct Naves_Data
     int* puntuacion;
     bool* end;
 } datos_naves;
-
-
+    
 
 // Hilo Disparador 
 void* disparador(void* arg)
@@ -245,7 +244,7 @@ void* juez(void* arg)
 }
 
 
-
+//TODO comprobar que los datos entran correctamente
 
 int main(int argc, char* argv[])
 {
