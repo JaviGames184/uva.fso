@@ -18,9 +18,62 @@ int posicion_lectura;
 sem_t espacio_buffer;
 sem_t haydatos;
 sem_t lectura_buffer;
+sem_t disparador_fin;
 sem_t nave_fin;
 
-// Structs
+
+/* Listas Enlazadas */
+struct ListaEnlazada 
+{
+    int dato;
+    struct ListaEnlazada *siguiente;
+};
+
+// Funcion para incluir un elemento en la útlima posición de la lista enlazada
+void append(struct ListaEnlazada **lista_enlazada, int dato) {
+    struct ListaEnlazada *nuevo_nodo;
+
+    // Se crea un nodo donde se guardan los datos
+    nuevo_nodo = (struct ListaEnlazada *) malloc(sizeof(struct ListaEnlazada));
+    nuevo_nodo->dato = dato;
+    nuevo_nodo->siguiente = NULL;
+    
+    // Se comprueba si es el primer elemento que se está insertando
+    if (*lista_enlazada == NULL)
+    {
+        *lista_enlazada = nuevo_nodo;
+    }
+    else
+    {
+        // Coloca la nueva lista al final
+        while ((*lista_enlazada)->siguiente != NULL)
+        {
+            lista_enlazada = &((*lista_enlazada)->siguiente);
+        }          
+        // Se incluye el enlace al siguiente elemnto     
+        (*lista_enlazada)->siguiente = nuevo_nodo;
+                    
+    }
+    
+}
+
+// Funcion para liberar todo el espacio utilizado por la lista enlazada (borrado)
+void freeLista(struct ListaEnlazada* lista_enlazada)
+{
+    struct ListaEnlazada *siguiente = lista_enlazada->siguiente;
+    while (siguiente != NULL)
+    {
+        free(lista_enlazada);
+        lista_enlazada = siguiente;
+        siguiente = lista_enlazada->siguiente;
+    }         
+}
+/* Fin Listas Enlazadas */
+
+//TODO implementar listas
+
+/* Struct General Data */
+// Estructura de datos donde se guarda toda la informacion que se necesita en el programa 
 struct General_Data
 {
     char* fichero_entrada;
@@ -30,8 +83,13 @@ struct General_Data
     int caracteres_correctos;
     int caracteres_incorrectos;
     int caracteres_leidos;
-};
+    struct Lista_Enlazada* puntero;
+} datos;
+/* Fin Struct General Data */
 
+
+/* Struct Naves Data */
+// Estructura de datos donde se guarda toda la informacion que necesita cada una de las naves 
 struct Naves_Data
 {
     int* identificadores;
@@ -43,15 +101,17 @@ struct Naves_Data
     int* puntuacion;
     bool* end;
 } datos_naves;
-    
+/* Fin Struct Naves Data */ 
+
+
 
 // Hilo Disparador 
 void* disparador(void* arg)
 {
-    struct General_Data * datos_disparador;
-    datos_disparador = (struct General_Data*)arg;
+    // Se guarda la estructura con todos los datos
+    struct General_Data * datos_disparador = (struct General_Data*)arg;
 
-    //Variables locales    
+    //Variables locales del disparador   
     FILE *fichero_entrada = fopen(datos_disparador -> fichero_entrada, "r");
     char caracter;
     bool caracter_correcto;
@@ -59,11 +119,13 @@ void* disparador(void* arg)
     int incorrectos = 0;
     int leidos = 0;
 
+    // Se lee el fichero
     while ((caracter = fgetc(fichero_entrada)) != EOF) 
     {
         caracter_correcto = false;
         leidos ++;
 
+        // Se comprueba si el caracter es correcto
         if(caracter == '*')
         {
             caracter_correcto = true;
@@ -73,8 +135,11 @@ void* disparador(void* arg)
             caracter_correcto = true;
         }
         else if (caracter == 'b')
-        {
-            caracter = fgetc(fichero_entrada);  // El número de vidas
+        {   
+            // Se guarda el caracter que aparece detras del botiquin
+            caracter = fgetc(fichero_entrada);
+
+            // Se comprueba si este caracter es correcto
             if ((caracter == '1') || (caracter == '2') || (caracter == '3'))
             {
                 caracter_correcto = true;
@@ -84,13 +149,17 @@ void* disparador(void* arg)
                 incorrectos ++;
             }
         }
+
+
         if (caracter_correcto)
         {
             correctos ++;
 
+            // Se copia y actualiza la posición de lectura
             int pos = posicion_escritura;
             posicion_escritura = (posicion_escritura + 1) % datos_disparador -> buffersize;
-
+            
+            // Se guarda la informacion en el buffer
             sem_wait(&espacio_buffer);
             Buffer[pos] = caracter;
             sem_post(&haydatos);          
@@ -101,20 +170,22 @@ void* disparador(void* arg)
         }  
 
     }
-    for(int i=0; i < datos_disparador->numnaves; i++)
-    {
-        sem_wait(&espacio_buffer);
-        int pos = posicion_escritura;
-        Buffer[pos] = '\0'; 
-        posicion_escritura = (posicion_escritura + 1) % datos_disparador -> buffersize;
-        sem_post(&haydatos);
-    }
+    
+    // Se guarda caracter de final
+    sem_wait(&espacio_buffer);
+    int pos = posicion_escritura;
+    Buffer[pos] = '\0'; 
+    sem_post(&haydatos);
+
     fclose(fichero_entrada);
 
-
+    // Se guardan los datos que necesita el juez para imprimir
     datos_disparador->caracteres_correctos = correctos;    
     datos_disparador->caracteres_incorrectos = incorrectos;
     datos_disparador->caracteres_leidos = leidos;
+
+    // Se indica que el disparador termina
+    sem_post(&disparador_fin);
 
     return 0;
 }
@@ -123,23 +194,28 @@ void* disparador(void* arg)
 // Hilo Nave
 void* naves(void* arg)
 {
+    // Se guarda el identificador de la nave
     int id_nave = *((int *) arg);
 
-    //Variables
+    // Se inicializan las variables correspondientes a esta nave
     datos_naves.hit[id_nave] = 0;
     datos_naves.miss[id_nave] = 0; 
     datos_naves.health[id_nave] = 0;
     char caracter = ' ';
 
+    // Se recorre el buffer hasta que se encuentra el final
     while(caracter != '\0')
     {     
         sem_wait(&haydatos);   
         sem_wait(&lectura_buffer);
+
+        // Se guarda la posicion y el caracter
         int pos = posicion_lectura;
         caracter = Buffer[pos];  
 
         if ((caracter == '1') || (caracter == '2') || (caracter == '3'))
         {
+            // Estamos en un botiquin
             datos_naves.health[id_nave]++;
             caracter --;
             if(caracter == '0')
@@ -156,11 +232,11 @@ void* naves(void* arg)
             sem_post(&lectura_buffer); 
                        
         }
-        else
+        else if (caracter != '\0')
         {
+            // Se puede saltar ese caracter
             posicion_lectura = (posicion_lectura + 1) % datos_naves.buffersize;
             sem_post(&lectura_buffer);
-            // Ya se puede saltar ese caracter
             sem_post(&espacio_buffer);
             if(caracter == '*')
             {
@@ -170,17 +246,26 @@ void* naves(void* arg)
             {            
                 datos_naves.miss[id_nave] ++;
             }
-        }        
+        }     
+        else
+        {
+            // Ya no quedan mas datos por leer
+            sem_post(&haydatos);
+            sem_post(&lectura_buffer);
+        }   
     }  
-    datos_naves.end[id_nave] = true;
-    sem_post(&nave_fin);
+
+    datos_naves.end[id_nave] = true;   
+    sem_post(&nave_fin); 
     return 0;
 }
-
 
 // Hilo Juez
 void* juez(void* arg)
 {
+    sem_wait(&disparador_fin);
+    sem_post(&nave_fin);
+
     struct General_Data * datos_juez;
     datos_juez = (struct General_Data*)arg;
 
@@ -308,8 +393,8 @@ int main(int argc, char* argv[])
     }
 
     // Se inicializan los tipso de datos con toda la informacion necesaria
+
     // Datos recibidos
-    struct General_Data datos;
     datos.fichero_entrada = fichero_entrada;
     datos.fichero_salida = fichero_salida;
     datos.buffersize = buffersize;
@@ -318,39 +403,47 @@ int main(int argc, char* argv[])
     // Datos utilizados por las naves
     datos_naves.buffersize = buffersize;
     datos_naves.numnaves = numnaves;
+    // Se reserva memoria para los vectores
     datos_naves.hit = (int*)malloc(numnaves*sizeof(int));
     datos_naves.miss = (int*)malloc(numnaves*sizeof(int));
     datos_naves.health = (int*)malloc(numnaves*sizeof(int));    
     datos_naves.puntuacion = (int*)malloc(numnaves*sizeof(int));
     datos_naves.end = (bool*)malloc(numnaves*sizeof(bool));
-    for(int i=0; i < numnaves*sizeof(bool); i++)
+
+
+    for(int i=0; i < numnaves; i++)
     {
         datos_naves.end[i] = false;
     }
+    
 
-    // Se inicializan las variables
+    // Se inicializan las variables globales
     posicion_escritura = 0;
     posicion_lectura = 0;
     Buffer = (char*)malloc(buffersize*sizeof(char));
+
 
     // Se inicializan los semaforos
     sem_init(&espacio_buffer, 0, buffersize);
     sem_init(&haydatos, 0, 0);
     sem_init(&lectura_buffer, 0, 1);
+    sem_init(&disparador_fin, 0, 0);
     sem_init(&nave_fin, 0, 0);
+
     
-    // Se crea el hilo disparador
+    // Se definen los hilos
     pthread_t Disparador;    
     pthread_t Naves[numnaves];  
     pthread_t Juez;    
 
-    // Se crea una lista de identificadores
+    // Se crea una lista de identificadores para las naves
     int id_naves[numnaves];
     for(int i = 0; i < numnaves; i++)
     {
         id_naves[i] = i;
     }
 
+    // Se crean los hilos
     pthread_create(&Disparador, NULL, disparador, (void*)&datos); 
     for(int i = 0; i < numnaves; i++)
     {
@@ -368,19 +461,20 @@ int main(int argc, char* argv[])
     pthread_join(Juez, NULL);
 
 
-    // Se eliminan las variables que se han utilizado
+    // Se eliminan los semáforos que se han utilizado
     sem_destroy(&espacio_buffer);
     sem_destroy(&haydatos);    
     sem_destroy(&lectura_buffer);
+    sem_destroy(&disparador_fin);
     sem_destroy(&nave_fin);
 
+    // Se libera toda la memoria utilizada
     free(Buffer);
     free(datos_naves.hit);
     free(datos_naves.miss);
     free(datos_naves.health);
     free(datos_naves.puntuacion);
     free(datos_naves.end);
-
 
     return 0;
 }
