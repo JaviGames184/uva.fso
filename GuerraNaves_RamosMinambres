@@ -1,41 +1,51 @@
-//Javier Ramos - Alejandro Minambres
-
-//TODO antes de atoi comprobar que todo son numeros
-
+// Javier Ramos - Alejandro Minambres - Practica Final Guerra Naves
+// Librerias
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <ctype.h>
 
 // Variables Compartidas
 char* Buffer;
 int posicion_escritura;
 int posicion_lectura;
+int naves_fin = 0;
 
 // Semaforos
 sem_t espacio_buffer;
 sem_t haydatos;
-sem_t lectura_buffer;
-sem_t disparador_fin;
-sem_t nave_fin;
+sem_t mutex_lectura_buffer;
+sem_t mutex_contador_fin;
+sem_t fin_naves;
+sem_t mutex_lista;
 
 
 /* Listas Enlazadas */
 struct ListaEnlazada 
 {
-    int dato;
-    struct ListaEnlazada *siguiente;
+    int id;
+    int hit;
+    int miss;
+    int health; 
+    int puntuacion;
+    struct ListaEnlazada* siguiente;
 };
-
 // Funcion para incluir un elemento en la útlima posición de la lista enlazada
-void append(struct ListaEnlazada **lista_enlazada, int dato) {
-    struct ListaEnlazada *nuevo_nodo;
-
+void append(struct ListaEnlazada** lista_enlazada, int ident, int hit, int miss, int health)
+{
+    struct ListaEnlazada* nuevo_nodo;
     // Se crea un nodo donde se guardan los datos
     nuevo_nodo = (struct ListaEnlazada *) malloc(sizeof(struct ListaEnlazada));
-    nuevo_nodo->dato = dato;
+
+    // Se guardan todos los datos
+    nuevo_nodo->id = ident;
+    nuevo_nodo->hit = hit;
+    nuevo_nodo->miss = miss;
+    nuevo_nodo->health = health;
+    nuevo_nodo->puntuacion = hit-health;
     nuevo_nodo->siguiente = NULL;
     
     // Se comprueba si es el primer elemento que se está insertando
@@ -56,7 +66,6 @@ void append(struct ListaEnlazada **lista_enlazada, int dato) {
     }
     
 }
-
 // Funcion para liberar todo el espacio utilizado por la lista enlazada (borrado)
 void freeLista(struct ListaEnlazada* lista_enlazada)
 {
@@ -70,7 +79,7 @@ void freeLista(struct ListaEnlazada* lista_enlazada)
 }
 /* Fin Listas Enlazadas */
 
-//TODO implementar listas
+
 
 /* Struct General Data */
 // Estructura de datos donde se guarda toda la informacion que se necesita en el programa 
@@ -83,9 +92,10 @@ struct General_Data
     int caracteres_correctos;
     int caracteres_incorrectos;
     int caracteres_leidos;
-    struct Lista_Enlazada* puntero;
+    struct ListaEnlazada* lista_enlazada;
 } datos;
 /* Fin Struct General Data */
+
 
 
 /* Struct Naves Data */
@@ -95,16 +105,25 @@ struct Naves_Data
     int* identificadores;
     int numnaves;
     int buffersize;
-    int* hit;
-    int* miss;
-    int* health; 
-    int* puntuacion;
-    bool* end;
 } datos_naves;
 /* Fin Struct Naves Data */ 
 
 
+/* Funcion isAlpha*/
+bool isAlpha(char* cadena){
+    int pos = 0;
+    while (cadena[pos]){
+        if (isalpha(cadena[pos]) && cadena[pos] != ' '){
+            return true;
+        }
+        pos ++;
+    }
 
+    return false;
+}
+
+
+/* Hilos */
 // Hilo Disparador 
 void* disparador(void* arg)
 {
@@ -184,11 +203,9 @@ void* disparador(void* arg)
     datos_disparador->caracteres_incorrectos = incorrectos;
     datos_disparador->caracteres_leidos = leidos;
 
-    // Se indica que el disparador termina
-    sem_post(&disparador_fin);
-
     return 0;
 }
+
 
 
 // Hilo Nave
@@ -197,17 +214,17 @@ void* naves(void* arg)
     // Se guarda el identificador de la nave
     int id_nave = *((int *) arg);
 
-    // Se inicializan las variables correspondientes a esta nave
-    datos_naves.hit[id_nave] = 0;
-    datos_naves.miss[id_nave] = 0; 
-    datos_naves.health[id_nave] = 0;
+    // Se crean las variables locales
+    int hit = 0;
+    int miss = 0;
+    int health = 0;
     char caracter = ' ';
 
     // Se recorre el buffer hasta que se encuentra el final
     while(caracter != '\0')
     {     
         sem_wait(&haydatos);   
-        sem_wait(&lectura_buffer);
+        sem_wait(&mutex_lectura_buffer);
 
         // Se guarda la posicion y el caracter
         int pos = posicion_lectura;
@@ -216,7 +233,7 @@ void* naves(void* arg)
         if ((caracter == '1') || (caracter == '2') || (caracter == '3'))
         {
             // Estamos en un botiquin
-            datos_naves.health[id_nave]++;
+            health++;
             caracter --;
             if(caracter == '0')
             {
@@ -229,104 +246,129 @@ void* naves(void* arg)
                 Buffer[pos] = caracter; 
                 sem_post(&haydatos);       
             }
-            sem_post(&lectura_buffer); 
+            sem_post(&mutex_lectura_buffer); 
                        
         }
         else if (caracter != '\0')
         {
             // Se puede saltar ese caracter
             posicion_lectura = (posicion_lectura + 1) % datos_naves.buffersize;
-            sem_post(&lectura_buffer);
+            sem_post(&mutex_lectura_buffer);
             sem_post(&espacio_buffer);
             if(caracter == '*')
             {
-                datos_naves.hit[id_nave] ++;
+                hit++;
             }
             else if (caracter == ' ')
             {            
-                datos_naves.miss[id_nave] ++;
+                miss++;
             }
         }     
         else
         {
             // Ya no quedan mas datos por leer
             sem_post(&haydatos);
-            sem_post(&lectura_buffer);
+            sem_post(&mutex_lectura_buffer);
         }   
-    }  
+    }
 
-    datos_naves.end[id_nave] = true;   
-    sem_post(&nave_fin); 
+    // Se guarda el identificador de la nave en la lista enlazada
+    sem_wait(&mutex_lista);
+    append(&(datos.lista_enlazada), id_nave, hit, miss, health);
+    sem_post(&mutex_lista);
+
+    sem_wait(&mutex_contador_fin);
+    naves_fin ++;
+    if(naves_fin == datos.numnaves)
+    {
+        sem_post(&fin_naves);
+    }
+    sem_post(&mutex_contador_fin);
+    
     return 0;
 }
+
+
 
 // Hilo Juez
 void* juez(void* arg)
 {
-    sem_wait(&disparador_fin);
-    sem_post(&nave_fin);
+    // Se espera a que las naves terminen
+    sem_wait(&fin_naves);
 
-    struct General_Data * datos_juez;
-    datos_juez = (struct General_Data*)arg;
+    struct General_Data * datos_juez = (struct General_Data*)arg;
+    struct ListaEnlazada * pos_lista = datos_juez->lista_enlazada;
+
+    // Variables locales    
+    int id;
+    int id_primero, hit_primero, miss_primero, health_primero, puntuacion_primero = 0;
+    int id_segundo, hit_segundo, miss_segundo, health_segundo, puntuacion_segundo = 0;
+    int totalhits = 0, totalmisses = 0, totalhp = 0, totaltoken = 0;
 
     FILE *fichero_salida = fopen(datos_juez->fichero_salida, "w");
     
     fprintf(fichero_salida, "El disparador ha procesado: %d tokens válidos y %d tokens inválidos, total: %d", datos_juez->caracteres_correctos, datos_juez->caracteres_incorrectos, datos_juez->caracteres_leidos);
 
-    for(int k=0; k < datos_naves.numnaves; k++)
-    {
-        // Se guarda la puntucion
-        datos_naves.puntuacion[k] = datos_naves.hit[k] - datos_naves.health[k];
-        // Se escribe en el fichero        
+    // Se recorre la lista enlazada
+    for(int i=0; i<datos.numnaves; i++)
+    {   
+        // Se imprime la informacion de la nave correspondiente
         fprintf(fichero_salida, "\nNave: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
-        k, datos_naves.hit[k], datos_naves.miss[k], datos_naves.health[k],  datos_naves.puntuacion[k]);
+        pos_lista->id, pos_lista->hit, pos_lista->miss, pos_lista->health,  pos_lista->puntuacion);
+
+        // Se cuentan los tokens
+        totalhits += pos_lista->hit;
+        totalmisses += pos_lista->miss;
+        totalhp += pos_lista->health;
+        totaltoken += pos_lista->hit + pos_lista->miss + pos_lista->health;
+
+        // Se guardan las maximas puntuaciones
+        if(pos_lista->puntuacion > puntuacion_primero)
+        {
+            id_segundo = id_primero;
+            hit_segundo = hit_primero;
+            miss_segundo = miss_primero;
+            health_segundo = health_primero;
+            puntuacion_segundo = puntuacion_primero;
+            
+            id_primero = pos_lista->id;
+            hit_primero = pos_lista->hit;
+            miss_primero = pos_lista->miss;
+            health_primero = pos_lista->health;
+            puntuacion_primero = pos_lista->puntuacion;
+        }
+        else if (pos_lista->puntuacion > puntuacion_segundo)
+        {
+            id_segundo = pos_lista->id;
+            hit_segundo = pos_lista->hit;
+            miss_segundo = pos_lista->miss;
+            health_segundo = pos_lista->health;
+            puntuacion_segundo = pos_lista->puntuacion;
+        }
+
+        // Se pasa a la siguiente posicion        
+        pos_lista = pos_lista->siguiente;
     }
 
-    int mayor_puntuacion;
-    for(int posicion = 1; posicion <= 2; posicion++)
+    // Se imprime a los ganadores
+    fprintf(fichero_salida, "\nNave Ganadora: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
+    id_primero, hit_primero, miss_primero, health_primero,  puntuacion_primero);
+
+    if(datos.numnaves > 1)
     {
-        // Se busca la puntuacion mas alta
-        mayor_puntuacion = 0;
-        for(int j=0; j < datos_naves.numnaves; j++)
-        {
-            if(datos_naves.puntuacion[mayor_puntuacion] < datos_naves.puntuacion[j])
-            {
-                mayor_puntuacion = j;
-            }
-        }
-        if (posicion == 1)
-        {
-            fprintf(fichero_salida, "\nNave Ganadora: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
-            mayor_puntuacion, datos_naves.hit[mayor_puntuacion], datos_naves.miss[mayor_puntuacion], datos_naves.health[mayor_puntuacion],  datos_naves.puntuacion[mayor_puntuacion] );
-        }
-        else if (datos_juez->numnaves != 1)
-        {
-            fprintf(fichero_salida, "\nNave Subcampeona: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
-            mayor_puntuacion, datos_naves.hit[mayor_puntuacion], datos_naves.miss[mayor_puntuacion], datos_naves.health[mayor_puntuacion],  datos_naves.puntuacion[mayor_puntuacion] );
-        }
-        // Se quita esa puntuacion para buscar la segunda mejor
-        datos_naves.puntuacion[mayor_puntuacion] = 0;
+        fprintf(fichero_salida, "\nNave Subcampeona: %d\n\tDisparos recibidos: %d\n\tDisparos fallados: %d\n\tBotiquines obtenidos: %d\n\tPuntuacion: %d\n",
+        id_segundo, hit_segundo, miss_segundo, health_segundo,  puntuacion_segundo);
     }
+    
 
-    int totalhits = 0;
-    int totalmisses = 0;
-    int totalhp = 0;
-    int totaltoken = 0;
-
-    for(int i=0; i < datos_naves.numnaves; i++)
-    {
-        totalhits += datos_naves.hit[i];
-        totalmisses += datos_naves.miss[i];
-        totalhp += datos_naves.health[i];
-        totaltoken = totaltoken + datos_naves.hit[i] + datos_naves.miss[i] + datos_naves.health[i];
-    }
-
+    // Se imprime el resumen
     fprintf(fichero_salida, "\n================== RESUMEN ==============\n\tDisparos recibidos Totales: %d\n\tDisparos fallados Totales: %d\n\tBotiquines obtenidos Totales: %d\n\tTotal de tokens emitidos: %d\n",
     totalhits, totalmisses, totalhp, totaltoken);
-    
+
     fclose(fichero_salida);
     return 0;
 }
+/* Fin Hilos */
 
 
 //TODO comprobar que los datos entran correctamente
@@ -377,6 +419,11 @@ int main(int argc, char* argv[])
 
         // Se comprueba que el tamano del buffer es correcto
         buffersize = atoi(argv[3]);
+        if (isAlpha(argv[3]))
+        {
+            printf("El tamano del buffer no es un entero");
+            exit(-1);
+        }
         if(buffersize <= 0)
         {
             printf("El valor introducido para el tamano del buffer es incorrecto\n");
@@ -385,6 +432,11 @@ int main(int argc, char* argv[])
 
         // Se comprueba que el numero de naves es correcto
         numnaves = atoi(argv[4]);
+        if (isAlpha(argv[4]))
+        {
+            printf("El numero de naves no es un entero");
+            exit(-1);
+        }
         if(numnaves <= 0)
         {
             printf("El valor introducido para el numero de naves es incorrecto\n");
@@ -399,45 +451,34 @@ int main(int argc, char* argv[])
     datos.fichero_salida = fichero_salida;
     datos.buffersize = buffersize;
     datos.numnaves = numnaves;
+    // La lista Enlazada en un comienzo es nula
+    datos.lista_enlazada = NULL;
 
     // Datos utilizados por las naves
     datos_naves.buffersize = buffersize;
-    datos_naves.numnaves = numnaves;
-    // Se reserva memoria para los vectores
-    datos_naves.hit = (int*)malloc(numnaves*sizeof(int));
-    datos_naves.miss = (int*)malloc(numnaves*sizeof(int));
-    datos_naves.health = (int*)malloc(numnaves*sizeof(int));    
-    datos_naves.puntuacion = (int*)malloc(numnaves*sizeof(int));
-    datos_naves.end = (bool*)malloc(numnaves*sizeof(bool));
-
-
-    for(int i=0; i < numnaves; i++)
-    {
-        datos_naves.end[i] = false;
-    }
-    
+    datos_naves.numnaves = numnaves;    
 
     // Se inicializan las variables globales
     posicion_escritura = 0;
     posicion_lectura = 0;
     Buffer = (char*)malloc(buffersize*sizeof(char));
 
-
     // Se inicializan los semaforos
     sem_init(&espacio_buffer, 0, buffersize);
     sem_init(&haydatos, 0, 0);
-    sem_init(&lectura_buffer, 0, 1);
-    sem_init(&disparador_fin, 0, 0);
-    sem_init(&nave_fin, 0, 0);
+    sem_init(&mutex_lectura_buffer, 0, 1);
+    sem_init(&mutex_contador_fin, 0, 1);
+    sem_init(&fin_naves, 0, 0);
+    sem_init(&mutex_lista, 0, 1);
 
     
     // Se definen los hilos
     pthread_t Disparador;    
-    pthread_t Naves[numnaves];  
+    pthread_t* Naves = (pthread_t*) malloc(numnaves*sizeof(pthread_t));
     pthread_t Juez;    
 
     // Se crea una lista de identificadores para las naves
-    int id_naves[numnaves];
+    int* id_naves = (int*) malloc(numnaves*sizeof(int));
     for(int i = 0; i < numnaves; i++)
     {
         id_naves[i] = i;
@@ -448,9 +489,8 @@ int main(int argc, char* argv[])
     for(int i = 0; i < numnaves; i++)
     {
         pthread_create(&Naves[i], NULL, naves, (void*)&id_naves[i]); 
-    }    
-    pthread_create(&Juez, NULL, juez, (void*)&datos);  
-       
+    }         
+    pthread_create(&Juez, NULL, juez, (void*)&datos);       
 
     // Se espera a que los hilos terminen    
     pthread_join(Disparador, NULL);
@@ -464,17 +504,15 @@ int main(int argc, char* argv[])
     // Se eliminan los semáforos que se han utilizado
     sem_destroy(&espacio_buffer);
     sem_destroy(&haydatos);    
-    sem_destroy(&lectura_buffer);
-    sem_destroy(&disparador_fin);
-    sem_destroy(&nave_fin);
+    sem_destroy(&mutex_lectura_buffer);
+    sem_destroy(&mutex_contador_fin);
+    sem_destroy(&fin_naves);
 
     // Se libera toda la memoria utilizada
     free(Buffer);
-    free(datos_naves.hit);
-    free(datos_naves.miss);
-    free(datos_naves.health);
-    free(datos_naves.puntuacion);
-    free(datos_naves.end);
+    free(Naves);
+    free(id_naves);
+    freeLista(datos.lista_enlazada);
 
     return 0;
 }
