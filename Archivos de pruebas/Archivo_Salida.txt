@@ -1,0 +1,36 @@
+El disparador ha procesado: 9273 tokens válidos y 2036 tokens inválidos, total: 11297
+Nave: 2
+	Disparos recibidos: 2496
+	Disparos fallados: 310
+	Botiquines obtenidos: 414
+	Puntuación: 2082
+
+Nave: 1
+	Disparos recibidos: 2460
+	Disparos fallados: 320
+	Botiquines obtenidos: 425
+	Puntuación: 2035
+
+Nave: 0
+	Disparos recibidos: 2462
+	Disparos fallados: 320
+	Botiquines obtenidos: 434
+	Puntuación: 2028
+
+Nave Ganadora: 2
+	Disparos recibidos: 2496
+	Disparos fallados: 310
+	Botiquines obtenidos: 414
+	Puntuación: 2082
+
+Nave Subcampeona: 1
+	Disparos recibidos: 2460
+	Disparos fallados: 320
+	Botiquines obtenidos: 425
+	Puntuación: 2035
+
+================== RESUMEN ==============
+	Disparos recibidos Totales: 7418
+	Disparos fallados Totales: 950
+	Botiquines obtenidos Totales: 1273
+	Total de tokens emitidos: 9641

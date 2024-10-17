@@ -1,0 +1,9 @@
+Tokens Válidos: 85, Invalidos: 15,
+Token Botiquin:11, Token Tiro Fallado:6, Token Tiro acertado:68
+
+
+Vidas totales entre todos los token botiquin: 19
+Elementos totales consumidos por las naves: 93
+
+Distribución Botiquines (11):
+Botiquines 3:2, Botiquines 2:4, Botiquines 1:5
