@@ -1,5 +1,5 @@
 # Guerra de Naves
-Este es una práctica de la asignatura de Fundamentos de Sistemas Operativos (FSO).
+Esta es una práctica de la asignatura de Fundamentos de Sistemas Operativos (FSO).
 
 Para ejecutar el programa:
 
