@@ -3,7 +3,9 @@ Este es una práctica de la asignatura de Fundamentos de Sistemas Operativos (FS
 
 Para ejecutar el programa:
 
+```
 ./programa ficheroEntrada ficheroSalida bufferSize numNaves
+```
 - **ficheroEntrada**: Un fichero que contiene:
     - "*": La nave ha recibido un disparo.
     - " ": La nave ha fallado un disparo.
