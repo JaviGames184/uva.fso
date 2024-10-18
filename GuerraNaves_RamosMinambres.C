@@ -371,7 +371,6 @@ void* juez(void* arg)
 /* Fin Hilos */
 
 
-//TODO comprobar que los datos entran correctamente
 
 int main(int argc, char* argv[])
 {
