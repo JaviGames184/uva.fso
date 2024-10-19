@@ -23,6 +23,6 @@ El programa está formado por:
    
 3. **Hilo Juez**: Lee las listas enlazadas de las naves para imprimir los resultados. Una vez que todas las naves terminen, el juez también imprimirá las naves que han terminado en primera y segunda posición. 
 
-# Autores 🧑🏻‍💻
+# Autores
 - **[AlexMinn](https://github.com/AlexMinn)**
 - **[JaviGames184](https://github.com/JaviGames184)**
